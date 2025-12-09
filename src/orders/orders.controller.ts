@@ -4,6 +4,7 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
+import { ChangeOrderStatusDto } from './dto';
 
 @Controller()
 export class OrdersController {
@@ -26,9 +27,8 @@ export class OrdersController {
   }
 
   @MessagePattern('changeOrderStatus')
-  changeOrderStatus() {
-    // return this.ordersService.changeOrderStatus();
-    throw new NotImplementedException();
+  changeOrderStatus(@Payload()changeOrderStatusDto: ChangeOrderStatusDto) {
+  return this.ordersService.changeStatus(changeOrderStatusDto);
   }
 
   
