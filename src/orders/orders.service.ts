@@ -23,17 +23,69 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async create(createOrderDto: CreateOrderDto) {
-    // return this.order.create({ data: createOrderDto });
-    // return {
-    //   service: 'orders microservice',
-    //   createOrderDto: createOrderDto,
-    // }
+    
 
-    const ids = [5,6];
-    const products = await firstValueFrom(
-      this.productsClient.send({cmd: 'validate_products'}, ids)
-    )
-    return products;
+    try {
+      //confirmar id de productos
+      const productIds = createOrderDto.items.map(item => item.productId);
+
+
+      const products : any[] = await firstValueFrom(
+      this.productsClient.send({cmd: 'validate_products'},  productIds ),
+    );
+    //calculos de los valores totales
+    const totalAmount = createOrderDto.items.reduce((acc, orderItem)=> {
+      const price = products.find(product => product.id === orderItem.productId,
+      ).price;
+      return price * orderItem.quantity;
+    },0);
+
+    const totalItems = createOrderDto.items.reduce((acc, orderItem) => {
+      return acc + orderItem.quantity;
+    },0);
+
+    //crear una transaccion de base de datos
+    const order = await this.order.create({
+      data:{
+      totalAmount: totalAmount,
+      totalItems: totalItems,
+      orderItems:{
+        createMany: {
+          data: createOrderDto.items.map( (orderItem) => ({
+            price: products.find(product => product.id === orderItem.productId).price,
+            productId: orderItem.productId,
+            quantity: orderItem.quantity,
+          }))
+          }
+      
+        }
+      },
+      include:{
+        //orderItems: true, //regresa todos los valores de order items
+        orderItems:{
+          select:{
+          price: true,
+          quantity: true,
+          productId: true
+        }
+        }
+      }
+    });
+    return{
+      ...order,
+      orderItems: order.orderItems.map( (orderItem) => ({
+        ...orderItem,
+        name: products.find(product => product.id === orderItem.productId).name,
+      }))
+    } 
+
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'One or more products are invalid',
+      })
+    }
+    
 
   }
 
