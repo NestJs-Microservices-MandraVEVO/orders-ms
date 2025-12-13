@@ -5,14 +5,14 @@ import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto';
 import { firstValueFrom } from 'rxjs';
-import { PRODUCT_SERVICE } from 'src/config';
+import { NATS_SERVICE, PRODUCT_SERVICE } from 'src/config';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger('OrdersService');
 
   constructor(
-    @Inject(PRODUCT_SERVICE) private readonly productsClient: ClientProxy
+    @Inject(NATS_SERVICE) private readonly client: ClientProxy
   ){
     super();
   }
@@ -31,7 +31,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
 
       const products : any[] = await firstValueFrom(
-      this.productsClient.send({cmd: 'validate_products'},  productIds ),
+      this.client.send({cmd: 'validate_products'},  productIds ),
     );
     //calculos de los valores totales
     const totalAmount = createOrderDto.items.reduce((acc, orderItem)=> {
@@ -120,6 +120,15 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
     const order = await this.order.findFirst({
       where: { id },
+      include: {
+        orderItems: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true
+          }
+        }
+      }
     })
 
     if (!order){
@@ -128,7 +137,19 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         message: `Order with ID ${id} not found`,
       })
     }
-    return order;
+
+    const productIds = order.orderItems.map( orderItem => orderItem.productId);
+    const products : any[] = await firstValueFrom(
+      this.client.send({cmd: 'validate_products'},  productIds ),
+    );
+
+    return {
+      ...order,
+      orderItems: order.orderItems.map( (orderItem) => ({
+        ...orderItem,
+        name: products.find(product => product.id === orderItem.productId).name,
+      }))
+    };
   }
 
   async changeStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
