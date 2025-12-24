@@ -3,10 +3,11 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { PrismaClient } from '../../generated/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
-import { ChangeOrderStatusDto } from './dto';
+import { ChangeOrderStatusDto, PaidOrderDto } from './dto';
 import { firstValueFrom } from 'rxjs';
 import { NATS_SERVICE, PRODUCT_SERVICE } from 'src/config';
 import { OrderWithProduct } from './interfaces/orders-with-product.interfaces';
+import { OrderReceipt } from '../../generated/prisma/index';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -188,6 +189,49 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       }),
     );
     return paymentSession;
+  }
+
+
+
+  async paidOrder(paidOrderDto: PaidOrderDto){
+
+    try {
+      const updatedOrder = await this.order.update({
+        where:{ id: paidOrderDto.orderId },
+        data:{
+          status: 'PAID',
+          paid: true,
+          paidAt: new Date(),
+          stripeChargeId: paidOrderDto.stripePaymentId,
+
+          orderReceipt:{
+            create:{
+              receiptUrl: paidOrderDto.receiptUrl
+            }
+          }
+        },
+        include: {
+          orderReceipt: true,
+          orderItems: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true
+            }
+          }
+        }
+      });
+
+      this.logger.log(`Order ${paidOrderDto.orderId} marked as PAID`);
+
+      return updatedOrder;
+    } catch (error) {
+      this.logger.error(`Failed to update order ${paidOrderDto.orderId}: ${error.message}`);
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error updating order: ${error.message}`,
+      });
+    }
   }
   
 }
