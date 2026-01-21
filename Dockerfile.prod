@@ -1,11 +1,10 @@
 #instrucciones para crear la aplicacion como una imagen
 #dependencias 
-FROM node:22-alpine as deps
+FROM node:22-slim as deps
 
 WORKDIR /usr/src/app
 
 COPY package*.json ./
-
 
 RUN yarn install
 
@@ -13,7 +12,7 @@ RUN yarn install
 
 
 # Builder - construye la aplicacion
-FROM node:22-alpine as build
+FROM node:22-slim as build
 
 WORKDIR /usr/src/app
 
@@ -23,15 +22,19 @@ COPY --from=deps /usr/src/app/node_modules ./node_modules
 #Copiar el codigo fuente de la aplicacion
 COPY . .
 
+RUN npx prisma generate
 # RUN yarn test
 RUN yarn build
 
 RUN yarn install --production --frozen-lockfile && yarn cache clean
 
-RUN npx prisma generate
+
 
 # Crear imagen final de docker
-FROM node:22-alpine as prod
+FROM node:22-slim as prod
+
+# Instalar OpenSSL necesario para Prisma
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 
@@ -42,14 +45,15 @@ COPY --from=build /usr/src/app/dist ./dist
 COPY --from=build /usr/src/app/prisma ./prisma
 COPY --from=build /usr/src/app/generated ./generated
 
+# Cambiar permisos para el usuario node
+RUN chown -R node:node /usr/src/app
+
 ENV NODE_ENV=production
 
 USER node
 
 EXPOSE 3000
 
-
-
-CMD [ "node", "dist/main.js" ]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
 #usamos el siguiente comando para hacer la prueba de la imagen creada, ya que si esta en imagenes pero no como contenedor habilitado
 # docker run -d -p 3000:3000 -e PORT=3000 -e NATS_SERVERS=nats://nats:4222 --name client-gateway-prod2 client-gateway   
